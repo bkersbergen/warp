@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='warp',
+    name='fwarp',
     version='0.0.1',
     description='Utility for warping functions',
     url='https://github.com/n-s-f/warp',
