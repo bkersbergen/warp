@@ -1,31 +1,19 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-def expand_extract(func, period=1, factor=.3):
+def expand_contract(func, period=1, factor=.3):
     """ factor of .5 gives original function """
     if factor < 0 or factor > 1:
         raise ValueError("factor must be between 0 and 1")
 
     def distort(x):
         num_periods = x // period
-        remainder = x % period
-
-        if remainder <= factor * period:
-            new_remainder = ((1 - ((factor - (remainder / period)) / factor))
-                            * (period / 2))
+        remainder_fraction = (x % period) / period
+        if remainder_fraction <= factor:
+            new_remainder = .5 * remainder_fraction / factor
         else:
-            new_remainder = (period / 2) + (
-                ((remainder / period) - factor) * (
-                    (period / 2) / ((1 - factor) * period))
-            )
-
-        return (num_periods * period) + new_remainder
-
-    print(distort(.3 * np.pi * 2))
-    print(distort(.301 * np.pi * 2))
-
-    x = np.linspace(0, 2*np.pi, 1000)
-    plt.plot(x, np.vectorize(distort)(x))
+            new_remainder = .5 + .5 * (remainder_fraction - factor) / (1 - factor)
+        return (num_periods * period) + (new_remainder * period)
 
     return warp(func, distort)
 
