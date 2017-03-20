@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from math import isclose
 
 def warp(func, knots, weights, period):
     """
@@ -16,7 +17,7 @@ def warp(func, knots, weights, period):
     A new function where the weights determine how much of the old function is
     gotten by each of the knots.
     """
-    if sum(weights) != 1:
+    if not isclose(sum(weights), 1):
         raise ValueError("Weights must sum to 1")
     if max(knots) >= 1 or min(knots) <= 0:
         raise ValueError("Knots must fall between 0 and 1")
@@ -46,6 +47,34 @@ def compress(func, factor=2):
 
 def elongate(func, factor=2):
     return compress(func, factor=1/factor)
+
+def add_noise(func, sd=1):
+    def noisy(x):
+        result = np.array(func(x))
+        return result + np.random.normal(0, sd, len(result))
+    return noisy
+
+def scale(func, knots, scales, period):
+    """
+    params:
+    ------
+    scales: scaling factors
+    knots: the breakpoints between which different scalinf factors are applied
+    period: same as above
+    """
+
+    def scaled(x):
+        result = func(x)
+
+        for i, x in enumerate(x):
+            remainder_fraction = (x % period) / period
+            for j, knot in enumerate(knots + [1]):
+                if knot >= remainder_fraction:
+                    break
+            result[i] *=  scales[j]
+        return result
+
+    return scaled
 
 def build_warped(func, distortion_func):
     def warped(x):

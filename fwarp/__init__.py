@@ -1,1 +1,1 @@
-from .warp import expand_contract, elongate, compress
+from .warp import warp, elongate, compress, scale, add_noise
