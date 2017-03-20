@@ -6,5 +6,4 @@ setup(
     description='Utility for warping functions',
     url='https://github.com/n-s-f/warp',
     packages=find_packages(exclude=['contrib', 'docs', 'tests', 'examples']),
-    install_requires=['pywavelets', 'matplotlib'],
 )
