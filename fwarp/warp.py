@@ -40,6 +40,13 @@ def warp(func, knots, weights, period):
 
     return build_warped(func, distort)
 
+def fwarp(func, distortion_func, period):
+   def distort(x):
+       num_periods = x // period
+       percent_through = (x % period) / period
+       return (distortion_func(percent_through) + num_periods) * period
+   return build_warped(func, distort)
+
 def compress(func, factor=2):
     def distort(x):
         return factor * x
