@@ -81,3 +81,14 @@ def build_warped(func, distortion_func):
         distorted_x = np.vectorize(distortion_func)(x)
         return func(distorted_x)
     return warped
+
+def recover_distortion_function(knots, weights):
+    def distortion_function(x):
+        start = 0
+        ks = [0] + knots + [1]
+        for i in range(len(ks)):
+            if x < ks[i]:
+                start = 0 if i < 2 else sum(weights[:i - 1])
+                return start + weights[i - 1] * ((x - ks[i - 1]) / (ks[i] - ks[i - 1]))
+    return np.vectorize(distortion_function)
+
