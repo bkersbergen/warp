@@ -90,6 +90,7 @@ def build_warped(func, distortion_func):
     return warped
 
 def generate_distortion_function(knots, weights):
+    # generates a distortion function from the parameters to the `warp` function
     def distortion_function(x):
         start = 0
         ks = [0] + knots + [1]
@@ -99,3 +100,21 @@ def generate_distortion_function(knots, weights):
                 return start + weights[i - 1] * ((x - ks[i - 1]) / (ks[i] - ks[i - 1]))
     return np.vectorize(distortion_function)
 
+def invert_distortion_function(distort):
+    def inverse_distort(x):
+        candidate = .5
+        max = 1
+        min = 0
+        
+        while np.abs(distort(candidate) - x) >= 1e-6:
+            if distort(candidate) < x:
+                min = candidate
+                candidate = (candidate + max) / 2
+
+            elif distort(candidate) > x:
+                max = candidate
+                candidate = (candidate - min) / 2
+        return candidate
+
+    return np.vectorize(inverse_distort)
+    
