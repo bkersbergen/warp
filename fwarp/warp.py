@@ -82,7 +82,7 @@ def build_warped(func, distortion_func):
         return func(distorted_x)
     return warped
 
-def recover_distortion_function(knots, weights):
+def generate_distortion_function(knots, weights):
     def distortion_function(x):
         start = 0
         ks = [0] + knots + [1]
