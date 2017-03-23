@@ -22,23 +22,8 @@ def warp(func, knots, weights, period):
     if max(knots) >= 1 or min(knots) <= 0:
         raise ValueError("Knots must fall between 0 and 1")
 
-    knots = [0] + knots + [1]
-    def distort(x):
-        num_periods = x // period
-        remainder_fraction = (x % period) / period
-
-        for i, knot in enumerate(knots):
-            if remainder_fraction <= knot:
-                break
-
-        i -= 1
-        start = sum(weights[:i])
-        proportion = (remainder_fraction - knots[i]) / (knots[i + 1] - knots[i])
-        new_remainder = start + (weights[i] * proportion)
-
-        return (num_periods * period) + (new_remainder * period)
-
-    return build_warped(func, distort)
+    distort = generate_distortion_function(knots, weights)
+    return fwarp(func, distort, period)
 
 def fwarp(func, distortion_func, period):
    def distort(x):
@@ -65,22 +50,20 @@ def scale(func, knots, scales, period):
     """
     params:
     ------
-    scales: scaling factors
+    scales: scaling factors, assumed continuous
     knots: the breakpoints between which different scalinf factors are applied
     period: same as above
     """
+    scale_func = generate_scale_function(knots, scales)
+    return fscale(func, scale_func, period)
 
+def fscale(func, scaling_func, period):
+    # scaling_func maps from the interval 0 -> 1 to the
+    # scale at that percentage through the period
     def scaled(x):
+        y = (x % period) / period
         result = func(x)
-
-        for i, x in enumerate(x):
-            remainder_fraction = (x % period) / period
-            for j, knot in enumerate(knots + [1]):
-                if knot >= remainder_fraction:
-                    break
-            result[i] *=  scales[j]
-        return result
-
+        return scaling_func(y) * result
     return scaled
 
 def build_warped(func, distortion_func):
@@ -100,13 +83,29 @@ def generate_distortion_function(knots, weights):
                 return start + weights[i - 1] * ((x - ks[i - 1]) / (ks[i] - ks[i - 1]))
     return np.vectorize(distortion_function)
 
+def generate_scale_function(knots, weights):
+    # generates a scale function from the parameters to the 'scale' function
+    # weights is two longer than weights
+    def scale(x):
+        ks = [0] + knots + [1]
+        for i in range(len(ks)):
+            if x < ks[i]:
+                slope = (weights[i] - weights[i - 1]) / (ks[i] - ks [i - 1]) 
+                return (slope * (x - ks[i - 1])) + weights[i - 1]
+    return np.vectorize(scale)
+
+def invert_scale_function(scale):
+    def inverted(x):
+        return 1 / scale(x)
+    return inverted
+
 def invert_distortion_function(distort):
     def inverse_distort(x):
         candidate = .5
         max = 1
         min = 0
         
-        while np.abs(distort(candidate) - x) >= 1e-6:
+        while np.abs(distort(candidate) - x) >= 1e-5:
             if distort(candidate) < x:
                 min = candidate
                 candidate = (candidate + max) / 2
