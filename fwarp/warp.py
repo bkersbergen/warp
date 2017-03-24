@@ -1,5 +1,7 @@
+import sys
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy.optimize as sop
 from math import isclose
 
 def warp(func, knots, weights, period):
@@ -64,7 +66,7 @@ def fscale(func, scaling_func, period):
         y = (x % period) / period
         result = func(x)
         return scaling_func(y) * result
-    return scaled
+    return np.vectorize(scaled)
 
 def build_warped(func, distortion_func):
     def warped(x):
@@ -116,4 +118,85 @@ def invert_distortion_function(distort):
         return candidate
 
     return np.vectorize(inverse_distort)
+
+def find_best_warp(func1, func2, x, num_knots=3, cost=None,
+                   optimization_method="SLSQP", log=False, to_return='functions'):
+    return find_best('warp', func1, func2, x, num_knots, cost,
+                     optimization_method, log, to_return)
+
+def find_best_scale(func1, func2, x, num_knots=3, cost=None,
+                    optimization_method="SLSQP", log=False, to_return='functions'):
+    return find_best('scale', func1, func2, x, num_knots, cost,
+                     optimization_method, log, to_return)
+
+def find_best_warp_scale(func1, func2, x, num_knots=3, cost=None,
+                        optimization_method="SLSQP", log=False, to_return='functions'):
+    return find_best('both', func1, func2, x, num_knots, cost,
+                     optimization_method, log, to_return)
+
+
+def find_best(manipulation, func1, func2, x, knots=3, cost=None,
+              optimization_method="SLSQP", log=False, to_return='functions'):
+    if cost is None:
+        cost = lambda x, y: np.abs(x - y)**2
+
+    knot_points = [(i + 1)/(knots + 1) for i in range(knots)]
+    def distance(params):
+        if log:
+            params = np.exp(params)
+            # sometimes the params are too big
+            if sum(np.isinf(params)) != 0 or sum(np.isnan(params) != 0):
+                return sys.maxsize
+
+        if manipulation == 'warp':
+            params = params / params.sum()
+            dist_func1 = warp(func1, knot_points, params, max(x))
+
+        elif manipulation == 'scale':
+            dist_func1 = scale(func1, knot_points, params, max(x))
+
+        elif manipulation == 'both':
+            params_1 = params[:knots + 1]
+            params_1 = params_1 / params_1.sum()
+            intermediary = warp(func1, knot_points, params_1, max(x))
+
+            params_2 = params[knots + 1:]
+            dist_func1 = scale(intermediary, knot_points, params_2, max(x))
+
+        total_cost = np.sum(cost(dist_func1(x).flatten(), func2(x).flatten()))
+        return total_cost
+
+    if manipulation == 'warp':
+        starting = np.ones(knots + 1)
+    elif manipulation == 'scale':
+        starting = np.ones(knots + 2)
+    elif manipulation == 'both':
+        starting = np.ones((knots * 2) + 3)
+    optimal = sop.minimize(distance, starting, method=optimization_method)
+    assert optimal.success, 'Optimization failed'
+
+    weights = optimal.x
+    if log:
+        weights = np.exp(weights)
+
+    if to_return == 'weights':
+        if manipulation == 'warp':
+            return weights / weights.sum()
+        if manipulation == 'scale':
+            return weights
+        if manipulation == 'both':
+            warp_weights = weights[:knots + 1] / weights[:knots + 1].sum()
+            return {'warp': warp_weights,
+                    'scale': weights[knots + 1:]}
     
+    elif to_return == 'functions':
+        if manipulation == 'warp':
+            weights = weights / weights.sum()
+            return warp(func1, knot_points, weights, max(x))
+        elif manipulation == 'scale':
+            return scale(func1, knot_points, weights, max(x))
+        elif manipulation == 'both':
+            warp_weights = weights[:knots + 1] / weights[:knots + 1].sum()
+            intermediary = warp(func1, knot_points, warp_weights, max(x))
+            return scale(intermediary, knot_points, weights[knots + 1:], max(x))
+
