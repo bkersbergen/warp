@@ -2,7 +2,8 @@ import sys
 import bezier
 import numpy as np
 import scipy.optimize as sop
-from math import isclose
+from operator import sub
+from math import isclose, fabs
 from scipy.interpolate import CubicSpline
 
 def functional_warp(func, distortion_func, period):
@@ -254,18 +255,23 @@ def find_best_spline(func1, func2, x, knot_points, cost=None , log=False,
         def cost(x, y):
             return np.abs(x.flatten() - y.flatten())**2
 
+    num_knots = len(knot_points)
+    diagonal = np.linspace(0, 1, num_knots + 2)
     def distance(params):
         #TODO: deal with log case
         warp_params, scale_params = np.split(params, [len(knot_points)])
 
-        if np.max(warp_params) > 1 or np.min(warp_params) < 0 \
-           or np.max(scale_params) > 2 or np.min(scale_params) < .5:
-
+        all_warp = np.zeros(num_knots + 2)
+        all_warp[1:] = np.concatenate((warp_params, np.ones(1)))
+        if (np.abs(all_warp - diagonal) > (1 / (2*(num_knots + 2)))).any() \
+            or any(fabs(sub(*a)) > .75 for a in zip(scale_params, scale_params[1:])) \
+            or (scale_params > 2).any() or (scale_params < 0.5).any():  
             return sys.maxsize
+
         intermediary = spline_warp(func1, knot_points, warp_params, max(x))
         new_func1 = spline_scale(intermediary, knot_points, scale_params, max(x))
         total_cost = np.sum(cost(new_func1(x), func2(x)))
-        print(total_cost)
+        # print(total_cost)
         return total_cost
 
     starting_warp = np.linspace(0, 1, len(knot_points) + 2)[1:-1]
@@ -273,7 +279,7 @@ def find_best_spline(func1, func2, x, knot_points, cost=None , log=False,
     starting = np.concatenate((starting_warp, starting_scale))
     optimal = sop.minimize(distance, starting, method=optimization_method,
                            options=optimization_options)
-    # assert optimal.success, 'Optimization failed'
+    assert optimal.success, 'Optimization failed'
 
     weights = optimal.x
     if log:
