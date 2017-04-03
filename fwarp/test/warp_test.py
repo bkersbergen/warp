@@ -14,9 +14,9 @@ def test_best_spline():
     best = find_best_spline(
         np.sin,
         distorted,
-        np.linspace(0, 2 * np.pi),
-        2,
-        to_return='weights', )
+        2 * np.pi,
+        return_type='weights',
+        optimization_kwargs={'method': 'Powell'})
 
     # then
     assert np.allclose(best['warp'], warp_yvalues, atol=.1)

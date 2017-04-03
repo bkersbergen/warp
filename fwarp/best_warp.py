@@ -4,7 +4,7 @@ from .warp import functional_warp, functional_scale
 from scipy.optimize import minimize
 
 
-def find_best(func1,
+def best_warp(func1,
               func2,
               period,
               warp_func,
@@ -48,7 +48,7 @@ def find_best(func1,
         applied in that order to achieve the optimal warp.
     """
 
-    valid_returns = ('joint_function', 'independent_functions')
+    valid_returns = ('joint_function', 'independent_functions', 'weights')
     if return_type not in valid_returns:
         raise ValueError('Invalid return type provided - must be in {}'
                          .format(valid_returns))
@@ -76,15 +76,17 @@ def find_best(func1,
 
     def distance(params):
         warp_weights, scale_weights = np.split(params, [num_knots - 2])
-        if not warp_constraints(warp_weights, scale_weights):
+        if not warp_constraints(warp_weights, scale_weights, knot_points):
             return sys.maxsize
 
-        warped = warp_func(func1, knot_points, warp_weights, period)
-        warped_scaled = scale_func(warped, knot_points, scale_weights, period)
+        warped = warp_func(func1, knot_points[1:-1], warp_weights, period)
+        warped_scaled = scale_func(warped, knot_points[1:-1], scale_weights,
+                                   period)
 
         warped_scaled_evaluated = warped_scaled(evaluation_points).flatten()
         func2_evaluated = func2(evaluation_points).flatten()
         cost = distance_cost(warped_scaled_evaluated, func2_evaluated)
+        cost += warp_cost(warp_weights, scale_weights, knot_points)
         return cost
 
     if starting_weights is None:
@@ -101,8 +103,11 @@ def find_best(func1,
 
     warp_weights, scale_weights = np.split(optimal.x, [num_knots - 2])
 
+    if return_type == 'weights':
+        return {'warp': warp_weights, 'scale': scale_weights}
+
     warp_func = generate_warp_func(knot_points[1:-1], warp_weights)
-    scale_func = generate_scale_func(knot_points, scale_weights)
+    scale_func = generate_scale_func(knot_points[1:-1], scale_weights)
 
     if return_type == 'joint_function':
         warped = functional_warp(func1, warp_func, period)
