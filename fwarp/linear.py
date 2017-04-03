@@ -1,9 +1,9 @@
 import sys
 from math import isclose
 from .warp import functional_warp, functional_scale
+from .best_warp import best_warp
 
 import numpy as np
-import scipy.optimize as sop
 
 
 def linear_warp(func, knots, weights, period):
@@ -69,101 +69,7 @@ def generate_linear_scale(knots, weights):
     return np.vectorize(scale)
 
 
-def find_best_linear_warp(func1,
-                          func2,
-                          x,
-                          num_knots=3,
-                          cost=None,
-                          optimization_method="SLSQP",
-                          log=False,
-                          to_return='functions'):
-    return find_best_linear(func1, func2, x, num_knots, cost, 'warp',
-                            optimization_method, log, to_return)
-
-
-def find_best_linear_scale(func1,
-                           func2,
-                           x,
-                           num_knots=3,
-                           cost=None,
-                           optimization_method="SLSQP",
-                           log=False,
-                           to_return='functions'):
-    return find_best_linear(func1, func2, x, num_knots, cost, 'scale',
-                            optimization_method, log, to_return)
-
-
-def find_best_linear(func1,
-                     func2,
-                     x,
-                     knot_points,
-                     cost=None,
-                     manipulation='both',
-                     optimization_method="Powell",
-                     log=False,
-                     to_return='functions'):
-    if cost is None:
-        def cost(x, y): return np.abs(x.flatten() - y.flatten())**2
-
-    knots = len(knot_points)
-
-    def distance(params):
-        if log:
-            params = np.exp(params)
-            # sometimes the params are too big
-            if sum(np.isinf(params)) != 0 or sum(np.isnan(params) != 0):
-                return sys.maxsize
-
-        if manipulation == 'warp':
-            params = params / params.sum()
-            dist_func1 = linear_warp(func1, knot_points, params, max(x))
-
-        elif manipulation == 'scale':
-            dist_func1 = linear_scale(func1, knot_points, params, max(x))
-
-        elif manipulation == 'both':
-            params_1 = params[:knots + 1]
-            params_1 = params_1 / params_1.sum()
-            intermediary = linear_warp(func1, knot_points, params_1, max(x))
-
-            params_2 = params[knots + 1:]
-            dist_func1 = linear_scale(intermediary, knot_points, params_2,
-                                      max(x))
-
-        total_cost = np.sum(cost(dist_func1(x), func2(x)))
-        return total_cost
-
-    if manipulation == 'warp':
-        starting = np.ones(knots + 1)
-    elif manipulation == 'scale':
-        starting = np.ones(knots + 2)
-    elif manipulation == 'both':
-        starting = np.ones((knots * 2) + 3)
-    optimal = sop.minimize(distance, starting, method=optimization_method)
-    assert optimal.success, 'Optimization failed'
-
-    weights = optimal.x
-    if log:
-        weights = np.exp(weights)
-
-    if to_return == 'weights':
-        if manipulation == 'warp':
-            return weights / weights.sum()
-        if manipulation == 'scale':
-            return weights
-        if manipulation == 'both':
-            warp_weights = weights[:knots + 1] / weights[:knots + 1].sum()
-            return {'warp': warp_weights, 'scale': weights[knots + 1:]}
-
-    elif to_return == 'functions':
-        if manipulation == 'warp':
-            weights = weights / weights.sum()
-            return linear_warp(func1, knot_points, weights, max(x))
-        elif manipulation == 'scale':
-            return linear_scale(func1, knot_points, weights, max(x))
-        elif manipulation == 'both':
-            warp_weights = weights[:knots + 1] / weights[:knots + 1].sum()
-            intermediary = linear_warp(func1, knot_points, warp_weights,
-                                       max(x))
-            return linear_scale(intermediary, knot_points, weights[knots + 1:],
-                                max(x))
+def find_best_linear(func1, func2, period, **kwargs):
+    return best_warp(func1, func2, period, linear_warp, linear_scale,
+                     generate_linear_distortion, generate_linear_scale,
+                     **kwargs)

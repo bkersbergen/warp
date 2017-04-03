@@ -6,6 +6,7 @@ import scipy.optimize as sop
 
 from .warp import functional_scale, functional_warp, \
     invert_monotonic_over_unit_interval
+from .best_warp import best_warp
 
 
 def generate_bezier_distortion(knots, yvalues):
@@ -50,55 +51,12 @@ def bezier_scale(func, knots, yvalues, period):
     return functional_scale(func, scale, period)
 
 
-def find_best_bezier(func1,
-                     func2,
-                     x,
-                     knot_points,
-                     cost=None,
-                     log=False,
-                     optimization_method='Powell',
-                     to_return='function',
-                     optimization_options=None):
-    # assumes x starts as zero
-    if cost is None:
+def find_best_bezier(func1, func2, period, **kwargs):
+    def warp_constraints(warp_weights, scale_weights, knot_points):
+        return np.max(warp_weights) > 1 or np.min(warp_weights) < 0 \
+           or np.max(scale_weights) > 2 or np.min(scale_weights) < .5
 
-        def cost(x, y):
-            return np.abs(x.flatten() - y.flatten())**2
-
-    def distance(params):
-        # TODO: deal with log case
-        warp_params, scale_params = np.split(params, [len(knot_points)])
-        if np.max(warp_params) > 1 or np.min(warp_params) < 0 \
-           or np.max(scale_params) > 2 or np.min(scale_params) < .5:
-            return sys.maxsize
-        intermediary = bezier_warp(func1, knot_points, warp_params, max(x))
-        new_func1 = bezier_scale(intermediary, knot_points, scale_params,
-                                 max(x))
-        total_cost = np.sum(cost(new_func1(x), func2(x)))
-        print(total_cost)
-        return total_cost
-
-    starting_warp = np.linspace(0, 1, len(knot_points) + 2)[1:-1]
-    starting_scale = np.ones(len(knot_points) + 2)
-    starting = np.concatenate((starting_warp, starting_scale))
-    optimal = sop.minimize(
-        distance,
-        starting,
-        method=optimization_method,
-        options=optimization_options)
-    assert optimal.success, 'Optimization failed'
-
-    # print(weights)
-    weights = optimal.x
-    if log:
-        weights = np.exp(weights)
-
-    warp_weights, scale_weights = np.split(weights, [len(knot_points)])
-    both_weights = {'warp': warp_weights, 'scale': scale_weights}
-    if to_return == 'weights':
-        return both_weights
-    elif to_return == 'function':
-        intermediary = bezier_warp(func1, knot_points, both_weights['warp'],
-                                   max(x))
-        return bezier_scale(intermediary, knot_points, both_weights['scale'],
-                            max(x))
+    kwargs['warp_constraints'] = warp_constraints
+    return best_warp(func1, func2, period, bezier_warp, bezier_scale,
+                     generate_bezier_distortion, generate_bezier_scale,
+                     **kwargs)
