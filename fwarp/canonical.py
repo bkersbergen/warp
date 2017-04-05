@@ -1,5 +1,6 @@
 from scipy.interpolate import CubicSpline
 from sklearn.mixture import GaussianMixture
+import sys
 import numpy as np
 import scipy.stats as st
 
@@ -52,12 +53,24 @@ def simple_canonical(signals, num_motifs, period, num_knots):
     for s, i, m in non_empty:
         allocation[s][i] = m
 
-    initial = starting_canonical(signals, allocation, num_motifs, period,
-                                 num_knots)
-    return initial
+    canonical = get_canonical(signals, allocation, num_motifs, period,
+                              num_knots)
+
+    num_switch = 2
+    while num_switch > 1:
+        old_allocation = allocation
+        allocation = reassign(signals, canonical, period, allocation,
+                              num_non_empty)
+        canonical = get_canonical(signals, allocation, num_motifs, period,
+                                  num_knots)
+
+        num_switch = np.sum(old_allocation != allocation)
+        print('number of allocations switched:', num_switch)
+
+    return canonical, allocation
 
 
-def starting_canonical(signals, allocation, num_motifs, period, num_knots):
+def get_canonical(signals, allocation, num_motifs, period, num_knots):
     occurrences = {i: [] for i in range(num_motifs)}
     for s in range(allocation.shape[0]):
         for i in range(allocation.shape[1]):
@@ -74,7 +87,41 @@ def starting_canonical(signals, allocation, num_motifs, period, num_knots):
     knot_points = get_knot_points(num_knots, period)
 
     y_values = [a(knot_points) for a in average_splines]
-    return y_values
+    return build_splines(knot_points, y_values)
+
+
+def reassign(signals, canonical_motifs, period, allocation, num_non_empty):
+    cost_matrix = np.zeros_like(allocation).astype(float)
+    motif_matrix = np.zeros_like(allocation)
+
+    # calculate all costs
+    for s in range(allocation.shape[0]):
+        for i in range(allocation.shape[1]):
+            best_cost = sys.maxsize
+            best_motif = -1
+            for j, m in enumerate(canonical_motifs):
+                # TODO: subtract out previous motifs before calculating costs
+                cost = calculate_cost(m, signals[s][i:i + period])
+                if cost < best_cost:
+                    best_motif = j
+                    best_cost = cost
+            motif_matrix[s][i] = best_motif
+            cost_matrix[s][i] = best_cost
+
+    cutoff_cost = np.partition(cost_matrix.flatten(),
+                               num_non_empty)[num_non_empty]
+
+    print('cutoff cost:', cutoff_cost)
+    for s in range(allocation.shape[0]):
+        for i in range(allocation.shape[1]):
+            if cost_matrix[s][i] >= cutoff_cost:
+                motif_matrix[s][i] = -1
+    return motif_matrix
+
+
+def calculate_cost(func, occurrence):
+    x = np.arange(0, len(occurrence))
+    return np.sum((func(x) - occurrence) ** 2)
 
 
 def build_splines(knot_points, y_values):
