@@ -1,11 +1,11 @@
-from scipy.optimize import minimize
 from scipy.interpolate import CubicSpline
+from sklearn.mixture import GaussianMixture
 import numpy as np
+import scipy.stats as st
 
 
-def canonical_mean(signals, allocation, num_knots=16):
-    period = get_period(signals)
-    num_motifs = len(np.unique(allocation))
+def canonical_mean(signals, allocation, num_motifs, num_knots=16):
+    period = get_signal_length(signals)
     averages = np.zeros((num_motifs, period))
 
     for i in range(num_motifs):
@@ -21,58 +21,67 @@ def canonical_mean(signals, allocation, num_knots=16):
     return [CubicSpline(knot_points, y) for y in y_values]
 
 
-def canonical_spline(signals,
-                     num_motifs,
-                     num_knots=16,
-                     cost=np.linalg.norm,
-                     optimizer_kwargs={}):
-
-    # start with random allocation
-    allocation = np.random.randint(0, num_motifs, len(signals))
-
-    # seed with mean
-    canonical = canonical_mean(signals, allocation, num_knots)
-
-    period = get_period(signals)
-    x = np.linspace(0, period, 20)
-
-    funcs = np.array([CubicSpline(range(period), s) for s in signals])
-    evaluated = np.array([f(x) for f in funcs])
-
+def gmm(signals, num_motifs, num_knots=16):
+    period = get_signal_length(signals)
     knot_points = get_knot_points(num_knots, period)
 
-    # exit when there are minimal changes in canonical motifs
-    changes = np.ones(num_motifs)
-    while max(changes) > 1e-6:
-        # step 1
-        for i in range(num_motifs):
+    funcs = np.array([CubicSpline(range(period), s) for s in signals])
+    occurrences = np.array([c(knot_points) for c in funcs])
 
-            def distance(yvalues):
-                candidate = CubicSpline(knot_points, yvalues)
-                return sum(
-                    cost(candidate(x) - e) for e in evaluated[allocation == i])
-
-            result = minimize(distance,
-                              canonical[i](knot_points), **optimizer_kwargs)
-
-            assert result.success, 'Optimization failed'
-            new_spline = CubicSpline(knot_points, result.x)
-            change = np.abs(canonical[i](knot_points) - new_spline(knot_points))
-            print(change)
-            changes[i] = change
-            canonical[i] = new_spline
-
-        c_evaluated = np.array([c(x) for c in canonical])
-
-        # step 2
-        for i, e in enumerate(evaluated):
-            costs = [cost(ce - e) for ce in c_evaluated]
-            allocation[i] = costs.index(min(costs))
-
-    return canonical
+    model = GaussianMixture(num_motifs)
+    model.fit(occurrences)
+    return model
 
 
-def get_period(signals):
+def simple_canonical(signals, num_motifs, period, num_knots):
+
+    # number of places at which a motif can begin
+    # TODO: Allow motifs to overrun the start and end of the signal
+    num_signals = len(signals)
+    signal_length = get_signal_length(signals)
+    cols = signal_length - period + 1
+
+    # sparse allocation matrix
+    allocation = np.array([[-1] * cols] * num_signals)
+
+    # motifs can overlap, so there are slightly more than we strictly need
+    num_non_empty = int(num_signals * (signal_length / period) * 1.2)
+    high = [num_signals, cols, num_motifs]
+    low = [0, 0, 0]
+    non_empty = st.randint.rvs(low, high, size=(num_non_empty, 3))
+    for s, i, m in non_empty:
+        allocation[s][i] = m
+
+    initial = starting_canonical(signals, allocation, num_motifs, period,
+                                 num_knots)
+    return initial
+
+
+def starting_canonical(signals, allocation, num_motifs, period, num_knots):
+    occurrences = {i: [] for i in range(num_motifs)}
+    for s in range(allocation.shape[0]):
+        for i in range(allocation.shape[1]):
+            motif_id = allocation[s][i]
+            if motif_id > -1:
+                motif_occurrence = signals[s][i:i + period]
+                occurrences[motif_id].append(motif_occurrence)
+
+    averages = np.zeros((num_motifs, period))
+    for i, o in occurrences.items():
+        averages[i] = np.mean(o, axis=0)
+
+    average_splines = [CubicSpline(np.arange(period), a) for a in averages]
+    knot_points = get_knot_points(num_knots, period)
+
+    y_values = [a(knot_points) for a in average_splines]
+    return y_values
+
+
+def build_splines(knot_points, y_values):
+    return [CubicSpline(knot_points, y) for y in y_values]
+
+
+def get_signal_length(signals):
     lengths = set(len(s) for s in signals)
 
     if len(lengths) > 1:
