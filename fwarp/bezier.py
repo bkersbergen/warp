@@ -1,6 +1,5 @@
 import sys
 
-import bezier
 import numpy as np
 import scipy.optimize as sop
 
